@@ -2,22 +2,23 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
- 
+
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
- 
+
 local aimlockEnabled = false
 local isRightMouseHeld = false
 local lockedTarget = nil
 local connection = nil
- 
+local targetMode = "Torso" -- "Torso" or "Head"
+
 -- GUI Setup
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "AimlockGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = LocalPlayer.PlayerGui
- 
+
 -- Notification function
 local function sendNotification(title, text)
     game:GetService("StarterGui"):SetCore("SendNotification", {
@@ -26,24 +27,24 @@ local function sendNotification(title, text)
         Duration = 3,
     })
 end
- 
+
 -- Draggable Frame
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 150, 0, 40)
-MainFrame.Position = UDim2.new(0.5, -75, 0, 20)
+MainFrame.Size = UDim2.new(0, 190, 0, 40)
+MainFrame.Position = UDim2.new(0.5, -95, 0, 20)
 MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
- 
+
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 8)
 UICorner.Parent = MainFrame
- 
+
 -- Label
 local Label = Instance.new("TextLabel")
-Label.Size = UDim2.new(0, 75, 1, 0)
+Label.Size = UDim2.new(0, 80, 1, 0)
 Label.Position = UDim2.new(0, 8, 0, 0)
 Label.BackgroundTransparency = 1
 Label.Text = "Aimlock"
@@ -51,11 +52,22 @@ Label.TextColor3 = Color3.fromRGB(220, 220, 220)
 Label.TextScaled = true
 Label.Font = Enum.Font.GothamBold
 Label.Parent = MainFrame
- 
--- Toggle Button
+
+-- Mode Label
+local ModeLabel = Instance.new("TextLabel")
+ModeLabel.Size = UDim2.new(0, 50, 1, 0)
+ModeLabel.Position = UDim2.new(0, 88, 0, 0)
+ModeLabel.BackgroundTransparency = 1
+ModeLabel.Text = "Torso"
+ModeLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+ModeLabel.TextScaled = true
+ModeLabel.Font = Enum.Font.GothamBold
+ModeLabel.Parent = MainFrame
+
+-- Toggle Button (-)
 local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0, 34, 0, 28)
-ToggleBtn.Position = UDim2.new(1, -44, 0.5, -14)
+ToggleBtn.Size = UDim2.new(0, 30, 0, 28)
+ToggleBtn.Position = UDim2.new(1, -72, 0.5, -14)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 ToggleBtn.Text = "-"
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -63,26 +75,112 @@ ToggleBtn.TextScaled = true
 ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.BorderSizePixel = 0
 ToggleBtn.Parent = MainFrame
- 
+
 local BtnCorner = Instance.new("UICorner")
 BtnCorner.CornerRadius = UDim.new(0, 6)
 BtnCorner.Parent = ToggleBtn
- 
+
+-- Mode Button (+)
+local ModeBtn = Instance.new("TextButton")
+ModeBtn.Size = UDim2.new(0, 30, 0, 28)
+ModeBtn.Position = UDim2.new(1, -36, 0.5, -14)
+ModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+ModeBtn.Text = "+"
+ModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ModeBtn.TextScaled = true
+ModeBtn.Font = Enum.Font.GothamBold
+ModeBtn.BorderSizePixel = 0
+ModeBtn.Parent = MainFrame
+
+local ModeBtnCorner = Instance.new("UICorner")
+ModeBtnCorner.CornerRadius = UDim.new(0, 6)
+ModeBtnCorner.Parent = ModeBtn
+
 -- Keybind hint label
 local KeyHint = Instance.new("TextLabel")
 KeyHint.Size = UDim2.new(1, 0, 0, 14)
 KeyHint.Position = UDim2.new(0, 0, 1, 2)
 KeyHint.BackgroundTransparency = 1
-KeyHint.Text = "[ - ] to toggle"
+KeyHint.Text = "[ - ] toggle  [ + ] switch mode"
 KeyHint.TextColor3 = Color3.fromRGB(160, 160, 160)
 KeyHint.TextScaled = true
 KeyHint.Font = Enum.Font.Gotham
 KeyHint.Parent = MainFrame
- 
--- Shared toggle function
-local function toggle()
+
+-- Get target part based on mode
+local function getTargetPart(char)
+    if targetMode == "Head" then
+        return char:FindFirstChild("Head")
+    else
+        return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    end
+end
+
+-- Find closest player to camera look direction
+local function getClosestPlayer()
+    local bestPlayer = nil
+    local bestDot = -1
+
+    local cameraPos = Camera.CFrame.Position
+    local cameraDir = Camera.CFrame.LookVector
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local char = player.Character
+        if not char then continue end
+        local part = getTargetPart(char)
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not part or not humanoid or humanoid.Health <= 0 then continue end
+
+        local toTarget = (part.Position - cameraPos).Unit
+        local dot = cameraDir:Dot(toTarget)
+        if dot > bestDot then
+            bestDot = dot
+            bestPlayer = player
+        end
+    end
+
+    return bestPlayer
+end
+
+-- Aimlock loop
+local function startAimlock()
+    connection = RunService.RenderStepped:Connect(function()
+        if not isRightMouseHeld then
+            lockedTarget = nil
+            return
+        end
+
+        if not lockedTarget then
+            lockedTarget = getClosestPlayer()
+        end
+
+        if lockedTarget then
+            local char = lockedTarget.Character
+            if not char then lockedTarget = nil return end
+            local part = getTargetPart(char)
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if not part or not humanoid or humanoid.Health <= 0 then
+                lockedTarget = nil
+                return
+            end
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
+        end
+    end)
+end
+
+local function stopAimlock()
+    if connection then
+        connection:Disconnect()
+        connection = nil
+    end
+    lockedTarget = nil
+end
+
+-- Shared aimlock toggle
+local function toggleAimlock()
     aimlockEnabled = not aimlockEnabled
- 
+
     if aimlockEnabled then
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
         startAimlock()
@@ -94,86 +192,46 @@ local function toggle()
         sendNotification("Aimlock", "Aimlock off")
     end
 end
- 
--- Find closest player to camera look direction
-function getClosestPlayer()
-    local bestPlayer = nil
-    local bestDot = -1
- 
-    local cameraPos = Camera.CFrame.Position
-    local cameraDir = Camera.CFrame.LookVector
- 
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        local char = player.Character
-        if not char then continue end
-        local torso = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if not torso or not humanoid or humanoid.Health <= 0 then continue end
- 
-        local toTarget = (torso.Position - cameraPos).Unit
-        local dot = cameraDir:Dot(toTarget)
-        if dot > bestDot then
-            bestDot = dot
-            bestPlayer = player
-        end
+
+-- Shared mode toggle
+local function toggleMode()
+    if targetMode == "Torso" then
+        targetMode = "Head"
+        ModeLabel.Text = "Head"
+        ModeLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        ModeBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+        sendNotification("Aimlock", "Mode switched to Head")
+    else
+        targetMode = "Torso"
+        ModeLabel.Text = "Torso"
+        ModeLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+        ModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+        sendNotification("Aimlock", "Mode switched to Torso")
     end
- 
-    return bestPlayer
+    lockedTarget = nil -- reset lock when switching
 end
- 
--- Aimlock loop
-function startAimlock()
-    connection = RunService.RenderStepped:Connect(function()
-        if not isRightMouseHeld then
-            lockedTarget = nil
-            return
-        end
- 
-        if not lockedTarget then
-            lockedTarget = getClosestPlayer()
-        end
- 
-        if lockedTarget then
-            local char = lockedTarget.Character
-            if not char then lockedTarget = nil return end
-            local torso = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-            local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if not torso or not humanoid or humanoid.Health <= 0 then
-                lockedTarget = nil
-                return
-            end
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, torso.Position)
-        end
-    end)
-end
- 
-function stopAimlock()
-    if connection then
-        connection:Disconnect()
-        connection = nil
-    end
-    lockedTarget = nil
-end
- 
--- Button click toggle
-ToggleBtn.MouseButton1Click:Connect(function()
-    toggle()
-end)
- 
--- Keyboard and mouse input
+
+-- Button clicks
+ToggleBtn.MouseButton1Click:Connect(toggleAimlock)
+ModeBtn.MouseButton1Click:Connect(toggleMode)
+
+-- Keyboard input
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    -- Minus key toggle
-    if input.KeyCode == Enum.KeyCode.Minus and not gameProcessed then
-        toggle()
+    if gameProcessed then return end
+
+    if input.KeyCode == Enum.KeyCode.Minus then
+        toggleAimlock()
     end
- 
-    -- Right mouse hold
+
+    if input.KeyCode == Enum.KeyCode.Equals then -- "=" key is "+" without shift
+        toggleMode()
+    end
+
     if input.UserInputType == Enum.UserInputType.MouseButton2 and aimlockEnabled then
         isRightMouseHeld = true
     end
 end)
- 
+
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         isRightMouseHeld = false
